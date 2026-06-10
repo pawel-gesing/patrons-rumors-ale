@@ -1,0 +1,14 @@
+{
+  "archetypes": [
+    { "id": "sarmatian_noble", "displayName": "Szlachcic", "factionId": "Sarmatians", "patienceSeconds": 48.0, "staySeconds": 42.0, "baseSpend": 22 },
+    { "id": "sarmatian_heir", "displayName": "Dziedzic", "factionId": "Sarmatians", "patienceSeconds": 42.0, "staySeconds": 38.0, "baseSpend": 18 },
+    { "id": "moonshiner_distiller", "displayName": "Gorzelnik", "factionId": "Moonshiners", "patienceSeconds": 38.0, "staySeconds": 34.0, "baseSpend": 14 },
+    { "id": "moonshiner_tinkerer", "displayName": "Wynalazca", "factionId": "Moonshiners", "patienceSeconds": 36.0, "staySeconds": 36.0, "baseSpend": 15 },
+    { "id": "revolutionary_agitator", "displayName": "Agitator", "factionId": "Revolutionaries", "patienceSeconds": 32.0, "staySeconds": 35.0, "baseSpend": 12 },
+    { "id": "revolutionary_printer", "displayName": "Drukarz", "factionId": "Revolutionaries", "patienceSeconds": 35.0, "staySeconds": 33.0, "baseSpend": 13 },
+    { "id": "neutral_merchant", "displayName": "Kupiec", "factionId": "Neutrals", "patienceSeconds": 55.0, "staySeconds": 30.0, "baseSpend": 16 },
+    { "id": "neutral_worker", "displayName": "Robotnik", "factionId": "Neutrals", "patienceSeconds": 50.0, "staySeconds": 28.0, "baseSpend": 10 },
+    { "id": "neutral_coachman", "displayName": "Woznica", "factionId": "Neutrals", "patienceSeconds": 46.0, "staySeconds": 31.0, "baseSpend": 11 }
+  ]
+}
+

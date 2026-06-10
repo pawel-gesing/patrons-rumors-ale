@@ -1,0 +1,18 @@
+{
+  "days": [
+    {
+      "id": "prototype_day_01",
+      "displayName": "Pierwszy wieczor",
+      "durationSeconds": 300.0,
+      "startingCustomers": 5,
+      "moneyGoal": 360,
+      "tables": [
+        { "id": "table_2a", "seats": 2 },
+        { "id": "table_2b", "seats": 2 },
+        { "id": "table_4", "seats": 4 },
+        { "id": "table_6", "seats": 6 }
+      ]
+    }
+  ]
+}
+

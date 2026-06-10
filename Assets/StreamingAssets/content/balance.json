@@ -1,0 +1,14 @@
+{
+  "arrivalIntervalSeconds": 15.0,
+  "arrivalGroupMin": 1,
+  "arrivalGroupMax": 3,
+  "reputationDriftPerSecond": 0.05,
+  "impatientReputationPenalty": 5.0,
+  "rejectionReputationPenalty": 7.0,
+  "goodSeatingReputationReward": 2.0,
+  "longStayReputationReward": 3.0,
+  "sarmatianCompanionStayBonus": 0.2,
+  "sarmatianCompanionSpendBonus": 0.25,
+  "revolutionaryAudienceStayBonus": 0.15,
+  "moonshinerGlobalSpendBonus": 0.1
+}

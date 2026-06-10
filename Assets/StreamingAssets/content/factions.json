@@ -1,0 +1,9 @@
+{
+  "factions": [
+    { "id": "Sarmatians", "displayName": "Sarmaci", "color": "#B87A24" },
+    { "id": "Moonshiners", "displayName": "Bimbrownicy", "color": "#408C47" },
+    { "id": "Revolutionaries", "displayName": "Rewolucjonisci", "color": "#AD2E2E" },
+    { "id": "Neutrals", "displayName": "Neutralni", "color": "#596B85" }
+  ]
+}
+
