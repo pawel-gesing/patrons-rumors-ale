@@ -34,17 +34,17 @@ namespace PatronsRumorsAle.Simulation
         public string TableId { get; internal set; }
         public int SeatIndex { get; internal set; } = -1;
 
-        internal CustomerInstance(int id, ArchetypeDefinition archetype)
+        internal CustomerInstance(int id, ArchetypeDefinition archetype, FactionDefinition faction)
         {
             Id = id;
             ArchetypeId = archetype.id;
             DisplayName = archetype.displayName;
-            Faction = ParseFaction(archetype.factionId);
+            Faction = ParseFaction(faction.id);
             Location = CustomerLocation.Queue;
-            PatienceRemaining = archetype.patienceSeconds;
-            StayRemaining = archetype.staySeconds;
-            InitialStaySeconds = archetype.staySeconds;
-            BaseSpend = archetype.baseSpend;
+            PatienceRemaining = faction.patienceSeconds;
+            StayRemaining = faction.baseStayTimeSeconds;
+            InitialStaySeconds = faction.baseStayTimeSeconds;
+            BaseSpend = faction.baseSpend;
         }
 
         private static FactionId ParseFaction(string value)
@@ -90,6 +90,32 @@ namespace PatronsRumorsAle.Simulation
             if (index < 0 || index >= seats.Count)
                 throw new ArgumentOutOfRangeException(nameof(index));
             return seats[index];
+        }
+
+        public int OccupiedSeatCount
+        {
+            get
+            {
+                var count = 0;
+                for (var i = 0; i < seats.Count; i++)
+                {
+                    if (seats[i].IsOccupied)
+                        count++;
+                }
+                return count;
+            }
+        }
+
+        public int FreeSeatCount => seats.Count - OccupiedSeatCount;
+
+        internal SeatState GetFirstFreeSeat()
+        {
+            for (var i = 0; i < seats.Count; i++)
+            {
+                if (!seats[i].IsOccupied)
+                    return seats[i];
+            }
+            return null;
         }
     }
 

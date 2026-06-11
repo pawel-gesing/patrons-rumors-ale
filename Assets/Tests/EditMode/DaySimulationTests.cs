@@ -3,162 +3,250 @@ using System.Linq;
 using NUnit.Framework;
 using PatronsRumorsAle.Content;
 using PatronsRumorsAle.Simulation;
-using UnityEngine;
 
 namespace PatronsRumorsAle.Tests
 {
     public sealed class DaySimulationTests
     {
         [Test]
-        public void QueuedCustomer_LosesPatienceAndLeaves()
+        public void ContentDays_UseV03TempoAndQueueCapacity()
         {
-            var simulation = CreateSimulation(new[] { Archetype("guest", "Neutrals", 1f, 20f, 10) });
-            var id = simulation.State.Queue.CustomerIds[0];
+            var content = ContentLoader.LoadFromStreamingAssets();
+
+            Assert.That(content.Days, Has.Count.GreaterThanOrEqualTo(3));
+            Assert.That(content.Days.All(day => day.durationSeconds == 180f), Is.True);
+            Assert.That(content.Days.All(day => day.arrivalIntervalSeconds == 7f), Is.True);
+            Assert.That(content.Days.All(day => day.startingQueue == 5), Is.True);
+            Assert.That(content.Days.All(day => day.visibleQueueCapacity == 5), Is.True);
+            Assert.That(content.Days.SelectMany(day => day.groupSizeWeights)
+                .All(weight => weight.size >= 1 && weight.size <= 3), Is.True);
+        }
+
+        [Test]
+        public void ArrivalInterval_AddsConfiguredGroupAfterSevenSeconds()
+        {
+            var simulation = CreateSimulation(startingQueue: 0, arrivalInterval: 7f, groupSize: 3);
+
+            simulation.Advance(6.9f);
+            Assert.That(simulation.State.Queue.CustomerIds, Is.Empty);
+
+            simulation.Advance(0.2f);
+            Assert.That(simulation.State.Queue.CustomerIds, Has.Count.EqualTo(3));
+        }
+
+        [TestCase(1)]
+        [TestCase(2)]
+        [TestCase(3)]
+        public void ArrivalGroup_SupportsOneToThreeCustomers(int groupSize)
+        {
+            var simulation = CreateSimulation(
+                startingQueue: 0,
+                arrivalInterval: 1f,
+                groupSize: groupSize);
 
             simulation.Advance(1.1f);
 
-            Assert.That(simulation.State.Customers[id].Location, Is.EqualTo(CustomerLocation.Left));
-            CollectionAssert.DoesNotContain(simulation.State.Queue.CustomerIds, id);
-            Assert.That(simulation.State.Reputation.Get(FactionId.Neutrals), Is.LessThan(0f));
+            Assert.That(simulation.State.Queue.CustomerIds, Has.Count.EqualTo(groupSize));
         }
 
         [Test]
-        public void SeatingCustomer_OccupiesSeat()
+        public void QueueOverflow_NeverExceedsCapacityAndRecordsMissedCustomers()
         {
-            var simulation = CreateSimulation(new[] { Archetype("guest", "Neutrals") });
-            var id = simulation.State.Queue.CustomerIds[0];
+            var simulation = CreateSimulation(
+                startingQueue: 4,
+                queueCapacity: 5,
+                arrivalInterval: 1f,
+                groupSize: 3);
 
-            Assert.That(simulation.SeatCustomer(id, "table", 0), Is.True);
-            Assert.That(simulation.State.Tables[0].Seats[0].CustomerId, Is.EqualTo(id));
-            Assert.That(simulation.State.Customers[id].Location, Is.EqualTo(CustomerLocation.Table));
+            simulation.Advance(1.1f);
+
+            Assert.That(simulation.State.Queue.CustomerIds, Has.Count.EqualTo(5));
+            Assert.That(simulation.Metrics.MissedCustomers, Is.EqualTo(2));
+            Assert.That(simulation.GetDaySummary().MissedCustomers, Is.EqualTo(2));
+            Assert.That(simulation.EventLog.Events.Count(item => item.Type == "missed_customer"), Is.EqualTo(2));
+        }
+
+        [TestCase(0f, 0f)]
+        [TestCase(2f, -4f)]
+        public void QueueOverflow_ReputationPenaltyIsConfigurable(float penalty, float expected)
+        {
+            var simulation = CreateSimulation(
+                startingQueue: 5,
+                queueCapacity: 5,
+                arrivalInterval: 1f,
+                groupSize: 2,
+                queueOverflowPenalty: penalty);
+
+            simulation.Advance(1.1f);
+
+            Assert.That(simulation.State.Reputation.Get(FactionId.Neutrals), Is.EqualTo(expected).Within(0.01f));
         }
 
         [Test]
-        public void OccupiedSeat_CannotReceiveAnotherCustomer()
+        public void SeatCustomerAtTable_UsesFirstFreeTechnicalSeat()
         {
-            var simulation = CreateSimulation(new[] { Archetype("guest", "Neutrals") }, startingCustomers: 2);
+            var simulation = CreateSimulation(startingQueue: 2, tableSeats: 2);
             var first = simulation.State.Queue.CustomerIds[0];
             var second = simulation.State.Queue.CustomerIds[1];
 
-            Assert.That(simulation.SeatCustomer(first, "table", 0), Is.True);
-            Assert.That(simulation.SeatCustomer(second, "table", 0), Is.False);
+            Assert.That(simulation.SeatCustomerAtTable(first, "table"), Is.True);
+            Assert.That(simulation.SeatCustomerAtTable(second, "table"), Is.True);
+
+            Assert.That(simulation.State.Tables[0].Seats[0].CustomerId, Is.EqualTo(first));
+            Assert.That(simulation.State.Tables[0].Seats[1].CustomerId, Is.EqualTo(second));
+        }
+
+        [Test]
+        public void SeatCustomerAtTable_RejectsFullTable()
+        {
+            var simulation = CreateSimulation(startingQueue: 2, tableSeats: 1);
+            var first = simulation.State.Queue.CustomerIds[0];
+            var second = simulation.State.Queue.CustomerIds[1];
+
+            Assert.That(simulation.SeatCustomerAtTable(first, "table"), Is.True);
+            Assert.That(simulation.SeatCustomerAtTable(second, "table"), Is.False);
             CollectionAssert.Contains(simulation.State.Queue.CustomerIds, second);
         }
 
         [Test]
-        public void CustomerAfterStay_PaysAndFreesSeat()
+        public void PlacementPreview_DescribesWholeTable()
         {
-            var simulation = CreateSimulation(new[] { Archetype("guest", "Neutrals", stay: 1f, spend: 17) });
-            var id = simulation.State.Queue.CustomerIds[0];
-            simulation.SeatCustomer(id, "table", 0);
+            var simulation = CreateSimulation(startingQueue: 2, tableSeats: 4);
+            simulation.SeatCustomerAtTable(simulation.State.Queue.CustomerIds[0], "table");
+
+            var preview = simulation.PreviewPlacement(simulation.State.Queue.CustomerIds[0], "table");
+
+            Assert.That(preview.TableId, Is.EqualTo("table"));
+            Assert.That(preview.CurrentCustomerCount, Is.EqualTo(1));
+            Assert.That(preview.FreeSeats, Is.EqualTo(3));
+            CollectionAssert.Contains(preview.PresentFactions, FactionId.Neutrals);
+            Assert.That(preview.IsNeutralPlacement, Is.True);
+        }
+
+        [Test]
+        public void Sarmatian_GetsCompanionBonus()
+        {
+            var simulation = CreateSimulation(
+                factions: new[] { Faction("Sarmatians", stay: 10f, spend: 20) },
+                startingQueue: 2);
+            simulation.SeatCustomerAtTable(simulation.State.Queue.CustomerIds[0], "table");
+
+            var preview = simulation.PreviewPlacement(simulation.State.Queue.CustomerIds[0], "table");
+            simulation.SeatCustomerAtTable(simulation.State.Queue.CustomerIds[0], "table");
+
+            Assert.That(preview.IsGoodSeating, Is.True);
+            Assert.That(preview.SpendMultiplier, Is.EqualTo(1.25f).Within(0.001f));
+            Assert.That(preview.StayMultiplier, Is.EqualTo(1.2f).Within(0.001f));
+        }
+
+        [Test]
+        public void SarmatianWithNeutral_IsNeutralWithoutFullBonusOrMajorPenalty()
+        {
+            var simulation = CreateMixedSimulation(startingQueue: 20);
+            var neutral = FindQueued(simulation, FactionId.Neutrals);
+            simulation.SeatCustomerAtTable(neutral, "table");
+            var sarmatian = FindQueued(simulation, FactionId.Sarmatians);
+
+            var preview = simulation.PreviewPlacement(sarmatian, "table");
+
+            Assert.That(preview.IsGoodSeating, Is.False);
+            Assert.That(preview.IsNeutralPlacement, Is.True);
+            Assert.That(preview.SpendMultiplier, Is.EqualTo(1f).Within(0.001f));
+            Assert.That(preview.ReputationDelta, Is.EqualTo(-0.5f).Within(0.001f));
+        }
+
+        [Test]
+        public void Revolutionary_GetsLargerBonusWithNeutralThanRevolutionary()
+        {
+            var mixed = CreateMixedSimulation(startingQueue: 20);
+            mixed.SeatCustomerAtTable(FindQueued(mixed, FactionId.Neutrals), "table");
+            var neutralAudience = mixed.PreviewPlacement(
+                FindQueued(mixed, FactionId.Revolutionaries),
+                "table");
+
+            var revolutionaries = CreateSimulation(
+                factions: new[] { Faction("Revolutionaries") },
+                startingQueue: 2);
+            revolutionaries.SeatCustomerAtTable(revolutionaries.State.Queue.CustomerIds[0], "table");
+            var companionAudience = revolutionaries.PreviewPlacement(
+                revolutionaries.State.Queue.CustomerIds[0],
+                "table");
+
+            Assert.That(neutralAudience.StayMultiplier, Is.EqualTo(1.2f).Within(0.001f));
+            Assert.That(companionAudience.StayMultiplier, Is.EqualTo(1.08f).Within(0.001f));
+        }
+
+        [Test]
+        public void ActiveMoonshiners_IncreaseRevenueOnlyUpToConfiguredCap()
+        {
+            var simulation = CreateMixedSimulation(
+                startingQueue: 30,
+                moonshinerBonus: 0.1f,
+                moonshinerCap: 0.2f,
+                neutralStay: 1f,
+                neutralSpend: 100);
+            for (var i = 0; i < 3; i++)
+                simulation.SeatCustomerAtTable(FindQueued(simulation, FactionId.Moonshiners), "table");
+            simulation.SeatCustomerAtTable(FindQueued(simulation, FactionId.Neutrals), "table");
 
             simulation.Advance(1.1f);
 
-            Assert.That(simulation.State.Tables[0].Seats[0].IsOccupied, Is.False);
-            Assert.That(simulation.State.Economy.Money, Is.EqualTo(17));
+            Assert.That(simulation.State.Economy.Money, Is.EqualTo(120));
         }
 
         [Test]
-        public void Sarmatian_GetsBonusWithAnotherSarmatian()
+        public void Reputation_IsClampedAndDriftsTowardZero()
         {
-            var simulation = CreateSimulation(new[] { Archetype("noble", "Sarmatians", stay: 10f, spend: 20) }, startingCustomers: 2);
-            var first = simulation.State.Queue.CustomerIds[0];
-            var second = simulation.State.Queue.CustomerIds[1];
-            simulation.SeatCustomer(first, "table", 0);
-
-            simulation.SeatCustomer(second, "table", 1);
-
-            Assert.That(simulation.State.Customers[second].StayRemaining, Is.EqualTo(12f).Within(0.01f));
-            simulation.Advance(12.1f);
-            Assert.That(simulation.State.Economy.Money, Is.GreaterThanOrEqualTo(45));
-        }
-
-        [Test]
-        public void Revolutionary_GetsBonusWithNeutralAudience()
-        {
-            var archetypes = new[]
-            {
-                Archetype("worker", "Neutrals", stay: 10f),
-                Archetype("agitator", "Revolutionaries", stay: 10f)
-            };
-            var simulation = CreateSimulation(archetypes, startingCustomers: 8);
-            var neutral = FindQueued(simulation, FactionId.Neutrals);
-            var revolutionary = FindQueued(simulation, FactionId.Revolutionaries);
-            simulation.SeatCustomer(neutral, "table", 0);
-
-            simulation.SeatCustomer(revolutionary, "table", 1);
-
-            Assert.That(simulation.State.Customers[revolutionary].StayRemaining, Is.EqualTo(11.5f).Within(0.01f));
-        }
-
-        [Test]
-        public void ActiveMoonshiner_IncreasesAnotherCustomersRevenue()
-        {
-            var archetypes = new[]
-            {
-                Archetype("distiller", "Moonshiners", stay: 100f, spend: 10),
-                Archetype("worker", "Neutrals", stay: 1f, spend: 100)
-            };
-            var simulation = CreateSimulation(archetypes, startingCustomers: 8);
-            var moonshiner = FindQueued(simulation, FactionId.Moonshiners);
-            var neutral = FindQueued(simulation, FactionId.Neutrals);
-            simulation.SeatCustomer(moonshiner, "table", 0);
-            simulation.SeatCustomer(neutral, "table", 1);
-
-            simulation.Advance(1.1f);
-
-            Assert.That(simulation.State.Economy.Money, Is.EqualTo(110));
-        }
-
-        [Test]
-        public void Reputation_IsClampedToMinusOneHundred()
-        {
-            var simulation = CreateSimulation(new[] { Archetype("guest", "Neutrals") }, startingCustomers: 20);
-            var ids = new List<int>(simulation.State.Queue.CustomerIds);
-            foreach (var id in ids)
+            var simulation = CreateSimulation(
+                startingQueue: 5,
+                rejectionPenalty: 25f,
+                reputationDrift: 0.05f);
+            foreach (var id in simulation.State.Queue.CustomerIds.ToArray())
                 simulation.RejectCustomer(id);
-
             Assert.That(simulation.State.Reputation.Get(FactionId.Neutrals), Is.EqualTo(-100f));
-        }
-
-        [Test]
-        public void Reputation_DriftsTowardZero()
-        {
-            var simulation = CreateSimulation(new[] { Archetype("guest", "Neutrals") });
-            var id = simulation.State.Queue.CustomerIds[0];
-            simulation.RejectCustomer(id);
-            var before = simulation.State.Reputation.Get(FactionId.Neutrals);
 
             simulation.Advance(10f);
 
-            Assert.That(simulation.State.Reputation.Get(FactionId.Neutrals), Is.GreaterThan(before));
+            Assert.That(simulation.State.Reputation.Get(FactionId.Neutrals), Is.GreaterThan(-100f));
             Assert.That(simulation.State.Reputation.Get(FactionId.Neutrals), Is.LessThanOrEqualTo(0f));
         }
 
         [Test]
-        public void DayCompletes_WhenMoneyGoalIsMet()
+        public void SeatingAlone_DoesNotRewardNeutralReputation()
         {
-            var simulation = CreateSimulation(
-                new[] { Archetype("guest", "Neutrals", stay: 0.5f, spend: 10) },
-                duration: 2f,
-                moneyGoal: 10);
-            simulation.SeatCustomer(simulation.State.Queue.CustomerIds[0], "table", 0);
+            var simulation = CreateSimulation(startingQueue: 1);
 
-            simulation.Advance(2f);
+            simulation.SeatCustomerAtTable(simulation.State.Queue.CustomerIds[0], "table");
 
-            Assert.That(simulation.State.Status, Is.EqualTo(DayStatus.Completed));
+            Assert.That(simulation.State.Reputation.Get(FactionId.Neutrals), Is.EqualTo(0f));
+        }
+
+        [TestCase(AutoPlayStrategy.FirstAvailable)]
+        [TestCase(AutoPlayStrategy.MatchFaction)]
+        [TestCase(AutoPlayStrategy.SarmatianGreed)]
+        [TestCase(AutoPlayStrategy.RevolutionaryAgitation)]
+        public void AutoPlayStrategies_SeatAtTable(AutoPlayStrategy strategy)
+        {
+            var simulation = CreateMixedSimulation(startingQueue: 20);
+            var before = simulation.State.Queue.CustomerIds.Count;
+
+            Assert.That(AutoPlayRunner.TrySeatNext(simulation, strategy), Is.True);
+            Assert.That(simulation.State.Queue.CustomerIds.Count, Is.EqualTo(before - 1));
+            Assert.That(simulation.State.Tables.Sum(table => table.OccupiedSeatCount), Is.EqualTo(1));
         }
 
         [Test]
-        public void Metrics_CollectMoneyCountsAndTimes()
+        public void Metrics_ReportServiceRejectionImpatienceAndTableMoney()
         {
             var simulation = CreateSimulation(
-                new[] { Archetype("guest", "Neutrals", stay: 1f, spend: 17) },
-                startingCustomers: 3);
+                startingQueue: 3,
+                neutralStay: 1f,
+                neutralSpend: 17,
+                neutralPatience: 1f);
             var served = simulation.State.Queue.CustomerIds[0];
             var rejected = simulation.State.Queue.CustomerIds[1];
             simulation.Advance(0.5f);
-            simulation.SeatCustomer(served, "table", 0);
+            simulation.SeatCustomerAtTable(served, "table");
             simulation.RejectCustomer(rejected);
             simulation.Advance(1.1f);
 
@@ -166,184 +254,123 @@ namespace PatronsRumorsAle.Tests
 
             Assert.That(summary.ServedCustomers, Is.EqualTo(1));
             Assert.That(summary.RejectedCustomers, Is.EqualTo(1));
+            Assert.That(summary.ImpatientDepartures, Is.EqualTo(1));
             Assert.That(summary.AverageWaitSeconds, Is.EqualTo(0.5f).Within(0.11f));
             Assert.That(summary.AverageStaySeconds, Is.EqualTo(1f).Within(0.11f));
-            Assert.That(summary.MoneyByTable["table"], Is.EqualTo(17));
-            Assert.That(summary.BestEarningTableId, Is.EqualTo("table"));
-        }
-
-        [TestCase(10, DayStatus.Completed)]
-        [TestCase(11, DayStatus.Failed)]
-        public void Summary_ReportsSuccessOrFailure(int goal, DayStatus expected)
-        {
-            var simulation = CreateSimulation(
-                new[] { Archetype("guest", "Neutrals", stay: 0.5f, spend: 10) },
-                duration: 2f,
-                moneyGoal: goal);
-            simulation.SeatCustomer(simulation.State.Queue.CustomerIds[0], "table", 0);
-
-            simulation.Advance(2f);
-
-            Assert.That(simulation.GetDaySummary().Status, Is.EqualTo(expected));
+            Assert.That(summary.BestEarningTableMoney, Is.EqualTo(17));
         }
 
         [Test]
-        public void ReputationMetrics_AreGroupedByFactionAndReason()
+        public void DayEndsAtConfiguredDuration()
         {
-            var simulation = CreateSimulation(
-                new[] { Archetype("guest", "Neutrals") },
-                startingCustomers: 2);
-            var ids = simulation.State.Queue.CustomerIds.ToArray();
+            var simulation = CreateSimulation(duration: 180f, moneyGoal: 9999);
 
-            simulation.RejectCustomer(ids[0]);
-            simulation.RejectCustomer(ids[1]);
+            simulation.Advance(180f);
 
-            var metric = simulation.GetDaySummary().ReputationChanges.Single(
-                item => item.Faction == FactionId.Neutrals && item.Reason == "rejected");
-            Assert.That(metric.Delta, Is.EqualTo(-14f));
-        }
-
-        [Test]
-        public void PlacementPreview_SarmatianWithSarmatian_ShowsBonuses()
-        {
-            var simulation = CreateSimulation(
-                new[] { Archetype("noble", "Sarmatians") },
-                startingCustomers: 2);
-            simulation.SeatCustomer(simulation.State.Queue.CustomerIds[0], "table", 0);
-
-            var preview = simulation.PreviewPlacement(simulation.State.Queue.CustomerIds[0], "table", 1);
-
-            Assert.That(preview.IsGoodSeating, Is.True);
-            Assert.That(preview.SpendMultiplier, Is.EqualTo(1.25f).Within(0.001f));
-            Assert.That(preview.StayMultiplier, Is.EqualTo(1.2f).Within(0.001f));
-            CollectionAssert.Contains(preview.ActiveBonuses, "Sarmatian companions");
-        }
-
-        [Test]
-        public void PlacementPreview_RevolutionaryWithNeutral_ShowsAudienceBonus()
-        {
-            var simulation = CreateSimulation(
-                new[]
-                {
-                    Archetype("worker", "Neutrals"),
-                    Archetype("agitator", "Revolutionaries")
-                },
-                startingCustomers: 12);
-            var neutral = FindQueued(simulation, FactionId.Neutrals);
-            simulation.SeatCustomer(neutral, "table", 0);
-            var revolutionary = FindQueued(simulation, FactionId.Revolutionaries);
-
-            var preview = simulation.PreviewPlacement(revolutionary, "table", 1);
-
-            Assert.That(preview.IsGoodSeating, Is.True);
-            Assert.That(preview.StayMultiplier, Is.EqualTo(1.15f).Within(0.001f));
-            CollectionAssert.Contains(preview.ActiveBonuses, "Revolutionary audience");
-        }
-
-        [Test]
-        public void PlacementPreview_Moonshiner_ShowsGlobalSpendBonus()
-        {
-            var simulation = CreateSimulation(new[] { Archetype("distiller", "Moonshiners") });
-
-            var preview = simulation.PreviewPlacement(simulation.State.Queue.CustomerIds[0], "table", 0);
-
-            Assert.That(preview.SpendMultiplier, Is.EqualTo(1.1f).Within(0.001f));
-            CollectionAssert.Contains(preview.ActiveBonuses, "Moonshiner trade");
-        }
-
-        [Test]
-        public void ImpatientDeparture_AddsEventAndMetric()
-        {
-            var simulation = CreateSimulation(new[] { Archetype("guest", "Neutrals", patience: 0.5f) });
-
-            simulation.Advance(0.6f);
-
-            Assert.That(simulation.EventLog.Events.Any(item => item.Type == "customer_left_queue_impatient"), Is.True);
-            Assert.That(simulation.GetDaySummary().ImpatientDepartures, Is.EqualTo(1));
-        }
-
-        [Test]
-        public void ContentLoader_LoadsThreeDistinctDaysFromJson()
-        {
-            var content = ContentLoader.LoadFromStreamingAssets();
-
-            Assert.That(content.Days.Count, Is.GreaterThanOrEqualTo(3));
-            Assert.That(content.GetDay("day_001_intro").moneyGoal, Is.LessThan(
-                content.GetDay("day_003_crowded_agitation").moneyGoal));
-            Assert.That(content.GetDay("day_002_sarmatian_evening").factionArrivalWeights
-                .Single(item => item.factionId == "Sarmatians").weight, Is.EqualTo(6f));
-        }
-
-        [Test]
-        public void Simulation_UsesArbitraryDayDefinitionWithoutKnownId()
-        {
-            var simulation = CreateSimulation(
-                new[] { Archetype("guest", "Neutrals") },
-                duration: 3f,
-                moneyGoal: 0,
-                dayId: "designer_test_day");
-
-            simulation.Advance(3f);
-
-            Assert.That(simulation.Day.id, Is.EqualTo("designer_test_day"));
-            Assert.That(simulation.State.Status, Is.EqualTo(DayStatus.Completed));
-        }
-
-        [Test]
-        public void Advance_LargeTimeStep_RemainsStableAndCompletesDay()
-        {
-            var simulation = CreateSimulation(
-                new[] { Archetype("guest", "Neutrals", patience: 1f) },
-                duration: 5f,
-                moneyGoal: 9999);
-
-            Assert.DoesNotThrow(() => simulation.Advance(100000f));
-            Assert.That(simulation.State.ElapsedSeconds, Is.EqualTo(5f));
+            Assert.That(simulation.State.ElapsedSeconds, Is.EqualTo(180f));
             Assert.That(simulation.State.Status, Is.EqualTo(DayStatus.Failed));
         }
 
-        private static DaySimulation CreateSimulation(
-            IReadOnlyList<ArchetypeDefinition> archetypes,
-            int startingCustomers = 1,
-            float duration = 200f,
-            int moneyGoal = 9999,
-            string dayId = "test")
+        private static DaySimulation CreateMixedSimulation(
+            int startingQueue,
+            float moonshinerBonus = 0.1f,
+            float moonshinerCap = 0.3f,
+            float neutralStay = 30f,
+            int neutralSpend = 14)
         {
+            return CreateSimulation(
+                factions: new[]
+                {
+                    Faction("Sarmatians", spend: 20),
+                    Faction("Moonshiners", stay: 100f),
+                    Faction("Revolutionaries"),
+                    Faction("Neutrals", stay: neutralStay, spend: neutralSpend)
+                },
+                startingQueue: startingQueue,
+                queueCapacity: startingQueue,
+                tableSeats: 40,
+                moonshinerBonus: moonshinerBonus,
+                moonshinerCap: moonshinerCap);
+        }
+
+        private static DaySimulation CreateSimulation(
+            IReadOnlyList<FactionDefinition> factions = null,
+            int startingQueue = 1,
+            int queueCapacity = 40,
+            int tableSeats = 20,
+            float duration = 200f,
+            float arrivalInterval = 1000f,
+            int groupSize = 1,
+            int moneyGoal = 9999,
+            float queueOverflowPenalty = 0f,
+            float rejectionPenalty = 7f,
+            float reputationDrift = 0.05f,
+            float moonshinerBonus = 0.1f,
+            float moonshinerCap = 0.3f,
+            float neutralStay = 30f,
+            int neutralSpend = 14,
+            float neutralPatience = 100f)
+        {
+            factions = factions ?? new[]
+            {
+                Faction("Neutrals", neutralPatience, neutralStay, neutralSpend)
+            };
             var balance = new BalanceDefinition
             {
-                reputationDriftPerSecond = 0.05f,
+                reputationDriftPerSecond = reputationDrift,
                 impatientReputationPenalty = 5f,
-                rejectionReputationPenalty = 7f,
+                rejectionReputationPenalty = rejectionPenalty,
                 goodSeatingReputationReward = 2f,
                 longStayReputationReward = 3f,
+                unmetFactionExpectationPenalty = 0.5f,
+                queueOverflowReputationPenalty = queueOverflowPenalty,
                 sarmatianCompanionStayBonus = 0.2f,
                 sarmatianCompanionSpendBonus = 0.25f,
-                revolutionaryAudienceStayBonus = 0.15f,
-                moonshinerGlobalSpendBonus = 0.1f
+                revolutionaryNeutralAudienceStayBonus = 0.2f,
+                revolutionaryCompanionStayBonus = 0.08f,
+                moonshinerGlobalSpendBonus = moonshinerBonus,
+                moonshinerGlobalSpendBonusCap = moonshinerCap
             };
             var day = new DayDefinition
             {
-                id = dayId,
+                id = "test",
                 durationSeconds = duration,
-                arrivalIntervalSeconds = 1000f,
-                startingCustomers = startingCustomers,
+                arrivalIntervalSeconds = arrivalInterval,
+                startingQueue = startingQueue,
+                visibleQueueCapacity = queueCapacity,
                 moneyGoal = moneyGoal,
-                tables = new List<TableDefinition> { new TableDefinition { id = "table", seats = 20 } },
+                tables = new List<TableDefinition>
+                {
+                    new TableDefinition { id = "table", seats = tableSeats }
+                },
                 groupSizeWeights = new List<GroupSizeWeightDefinition>
                 {
-                    new GroupSizeWeightDefinition { size = 1, weight = 1f }
+                    new GroupSizeWeightDefinition { size = groupSize, weight = 1f }
                 }
             };
-            foreach (var faction in archetypes.Select(item => item.factionId).Distinct())
+            foreach (var faction in factions)
             {
                 day.factionArrivalWeights.Add(new FactionWeightDefinition
                 {
-                    factionId = faction,
+                    factionId = faction.id,
                     weight = 1f
                 });
             }
+
+            var archetypes = new List<ArchetypeDefinition>
+            {
+                new ArchetypeDefinition
+                {
+                    id = "guest",
+                    displayName = "Guest",
+                    factionId = "",
+                    description = "Test guest.",
+                    spriteId = "placeholder_guest",
+                    encyclopediaEntryId = "guest"
+                }
+            };
             var content = new ContentDatabase(
-                new List<FactionDefinition>(),
+                factions,
                 archetypes,
                 new List<TraitDefinition>(),
                 new List<DayDefinition> { day },
@@ -353,21 +380,22 @@ namespace PatronsRumorsAle.Tests
             return simulation;
         }
 
-        private static ArchetypeDefinition Archetype(
+        private static FactionDefinition Faction(
             string id,
-            string faction,
             float patience = 100f,
-            float stay = 20f,
-            int spend = 10)
-            => new ArchetypeDefinition
+            float stay = 30f,
+            int spend = 14)
+        {
+            return new FactionDefinition
             {
                 id = id,
                 displayName = id,
-                factionId = faction,
+                color = "#FFFFFF",
                 patienceSeconds = patience,
-                staySeconds = stay,
+                baseStayTimeSeconds = stay,
                 baseSpend = spend
             };
+        }
 
         private static int FindQueued(DaySimulation simulation, FactionId faction)
         {

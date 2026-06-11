@@ -17,6 +17,9 @@ namespace PatronsRumorsAle.Content
         public string id;
         public string displayName;
         public string color;
+        public float patienceSeconds;
+        public float baseStayTimeSeconds;
+        public int baseSpend;
     }
 
     [Serializable]
@@ -31,9 +34,9 @@ namespace PatronsRumorsAle.Content
         public string id;
         public string displayName;
         public string factionId;
-        public float patienceSeconds;
-        public float staySeconds;
-        public int baseSpend;
+        public string description;
+        public string spriteId;
+        public string encyclopediaEntryId;
     }
 
     [Serializable]
@@ -83,7 +86,8 @@ namespace PatronsRumorsAle.Content
         public string displayName;
         public float durationSeconds;
         public float arrivalIntervalSeconds;
-        public int startingCustomers;
+        public int startingQueue;
+        public int visibleQueueCapacity;
         public int moneyGoal;
         public List<TableDefinition> tables = new List<TableDefinition>();
         public List<FactionWeightDefinition> factionArrivalWeights = new List<FactionWeightDefinition>();
@@ -104,10 +108,14 @@ namespace PatronsRumorsAle.Content
         public float rejectionReputationPenalty;
         public float goodSeatingReputationReward;
         public float longStayReputationReward;
+        public float unmetFactionExpectationPenalty;
+        public float queueOverflowReputationPenalty;
         public float sarmatianCompanionStayBonus;
         public float sarmatianCompanionSpendBonus;
-        public float revolutionaryAudienceStayBonus;
+        public float revolutionaryNeutralAudienceStayBonus;
+        public float revolutionaryCompanionStayBonus;
         public float moonshinerGlobalSpendBonus;
+        public float moonshinerGlobalSpendBonusCap;
     }
 
     public sealed class ContentDatabase
@@ -141,6 +149,17 @@ namespace PatronsRumorsAle.Content
             }
 
             throw new InvalidOperationException($"Unknown archetype '{id}'.");
+        }
+
+        public FactionDefinition GetFaction(string id)
+        {
+            for (var i = 0; i < Factions.Count; i++)
+            {
+                if (string.Equals(Factions[i].id, id, StringComparison.OrdinalIgnoreCase))
+                    return Factions[i];
+            }
+
+            throw new InvalidOperationException($"Unknown faction '{id}'.");
         }
 
         public DayDefinition GetDay(string id)

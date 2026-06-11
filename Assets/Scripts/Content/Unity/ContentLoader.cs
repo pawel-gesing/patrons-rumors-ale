@@ -56,20 +56,28 @@ namespace PatronsRumorsAle.Content
                     errors.Add("Faction id cannot be empty.");
                 else if (!factionIds.Add(faction.id))
                     errors.Add($"Duplicate faction id '{faction.id}'.");
+                if (faction.patienceSeconds <= 0f ||
+                    faction.baseStayTimeSeconds <= 0f ||
+                    faction.baseSpend < 0)
+                    errors.Add($"Faction '{faction.id}' has invalid customer balance values.");
             }
 
             if (factionIds.Count != 4)
-                errors.Add("Exactly four factions are required in v0.1.");
+                errors.Add("Exactly four factions are required.");
 
             var archetypeIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var archetype in archetypes.archetypes)
             {
                 if (string.IsNullOrWhiteSpace(archetype.id) || !archetypeIds.Add(archetype.id))
                     errors.Add($"Invalid or duplicate archetype id '{archetype.id}'.");
-                if (!factionIds.Contains(archetype.factionId))
+                if (!string.IsNullOrEmpty(archetype.factionId) &&
+                    !factionIds.Contains(archetype.factionId))
                     errors.Add($"Archetype '{archetype.id}' references unknown faction '{archetype.factionId}'.");
-                if (archetype.patienceSeconds <= 0f || archetype.staySeconds <= 0f || archetype.baseSpend < 0)
-                    errors.Add($"Archetype '{archetype.id}' has invalid patience, stay time, or spend.");
+                if (string.IsNullOrWhiteSpace(archetype.displayName) ||
+                    string.IsNullOrWhiteSpace(archetype.description) ||
+                    string.IsNullOrWhiteSpace(archetype.spriteId) ||
+                    string.IsNullOrWhiteSpace(archetype.encyclopediaEntryId))
+                    errors.Add($"Archetype '{archetype.id}' has incomplete presentation metadata.");
             }
 
             if (archetypes.archetypes.Count == 0)
@@ -81,7 +89,8 @@ namespace PatronsRumorsAle.Content
                 if (string.IsNullOrWhiteSpace(day.id) || !dayIds.Add(day.id))
                     errors.Add($"Invalid or duplicate day id '{day.id}'.");
                 if (day.durationSeconds <= 0f || day.arrivalIntervalSeconds <= 0f ||
-                    day.startingCustomers < 0 || day.moneyGoal < 0)
+                    day.startingQueue < 0 || day.visibleQueueCapacity <= 0 ||
+                    day.startingQueue > day.visibleQueueCapacity || day.moneyGoal < 0)
                     errors.Add($"Day '{day.id}' has invalid duration, starting queue, or goal.");
                 if (day.tables == null || day.tables.Count == 0)
                     errors.Add($"Day '{day.id}' must define at least one table.");
@@ -112,7 +121,8 @@ namespace PatronsRumorsAle.Content
                 var totalGroupWeight = 0f;
                 foreach (var groupWeight in day.groupSizeWeights)
                 {
-                    if (groupWeight.size <= 0 || !groupSizes.Add(groupWeight.size) || groupWeight.weight <= 0f)
+                    if (groupWeight.size < 1 || groupWeight.size > 3 ||
+                        !groupSizes.Add(groupWeight.size) || groupWeight.weight <= 0f)
                         errors.Add($"Day '{day.id}' contains an invalid group size weight.");
                     totalGroupWeight += groupWeight.weight;
                 }
@@ -125,10 +135,14 @@ namespace PatronsRumorsAle.Content
                 balance.rejectionReputationPenalty < 0f ||
                 balance.goodSeatingReputationReward < 0f ||
                 balance.longStayReputationReward < 0f ||
+                balance.unmetFactionExpectationPenalty < 0f ||
+                balance.queueOverflowReputationPenalty < 0f ||
                 balance.sarmatianCompanionStayBonus < 0f ||
                 balance.sarmatianCompanionSpendBonus < 0f ||
-                balance.revolutionaryAudienceStayBonus < 0f ||
-                balance.moonshinerGlobalSpendBonus < 0f)
+                balance.revolutionaryNeutralAudienceStayBonus < 0f ||
+                balance.revolutionaryCompanionStayBonus < 0f ||
+                balance.moonshinerGlobalSpendBonus < 0f ||
+                balance.moonshinerGlobalSpendBonusCap < 0f)
                 errors.Add("Balance values cannot be negative.");
 
             return errors;

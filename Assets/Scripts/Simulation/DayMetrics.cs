@@ -27,6 +27,7 @@ namespace PatronsRumorsAle.Simulation
         public int ServedCustomers { get; internal set; }
         public int ImpatientDepartures { get; internal set; }
         public int RejectedCustomers { get; internal set; }
+        public int MissedCustomers { get; internal set; }
         public float AverageWaitSeconds { get; internal set; }
         public float AverageStaySeconds { get; internal set; }
         public string BestEarningTableId { get; internal set; }
@@ -47,6 +48,7 @@ namespace PatronsRumorsAle.Simulation
         public int ServedCustomers { get; private set; }
         public int RejectedCustomers { get; private set; }
         public int ImpatientDepartures { get; private set; }
+        public int MissedCustomers { get; private set; }
         public int ActivatedFactionBonuses { get; private set; }
 
         internal void RecordSeated(float waitSeconds)
@@ -66,6 +68,7 @@ namespace PatronsRumorsAle.Simulation
 
         internal void RecordRejected() => RejectedCustomers++;
         internal void RecordImpatientDeparture() => ImpatientDepartures++;
+        internal void RecordMissedCustomer() => MissedCustomers++;
         internal void RecordBonusActivated() => ActivatedFactionBonuses++;
 
         internal void RecordReputation(FactionId faction, string reason, float delta)
@@ -118,6 +121,7 @@ namespace PatronsRumorsAle.Simulation
                 ServedCustomers = ServedCustomers,
                 ImpatientDepartures = ImpatientDepartures,
                 RejectedCustomers = RejectedCustomers,
+                MissedCustomers = MissedCustomers,
                 AverageWaitSeconds = seatedCustomers == 0 ? 0f : totalWaitSeconds / seatedCustomers,
                 AverageStaySeconds = ServedCustomers == 0 ? 0f : totalStaySeconds / ServedCustomers,
                 BestEarningTableId = bestTableId,

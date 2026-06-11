@@ -4,8 +4,12 @@
   "rejectionReputationPenalty": 7.0,
   "goodSeatingReputationReward": 2.0,
   "longStayReputationReward": 3.0,
+  "unmetFactionExpectationPenalty": 0.5,
+  "queueOverflowReputationPenalty": 0.0,
   "sarmatianCompanionStayBonus": 0.2,
   "sarmatianCompanionSpendBonus": 0.25,
-  "revolutionaryAudienceStayBonus": 0.15,
-  "moonshinerGlobalSpendBonus": 0.1
+  "revolutionaryNeutralAudienceStayBonus": 0.2,
+  "revolutionaryCompanionStayBonus": 0.08,
+  "moonshinerGlobalSpendBonus": 0.1,
+  "moonshinerGlobalSpendBonusCap": 0.3
 }

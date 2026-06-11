@@ -43,7 +43,7 @@ namespace PatronsRumorsAle.Simulation
             foreach (var table in day.tables)
                 state.Tables.Add(new TableState(table.id, table.seats));
 
-            for (var i = 0; i < day.startingCustomers; i++)
+            for (var i = 0; i < day.startingQueue; i++)
                 AddRandomCustomer();
 
             Log("day_started", detail: day.id);
@@ -76,9 +76,13 @@ namespace PatronsRumorsAle.Simulation
                     CompleteDay();
                 remaining -= step;
             }
+
+            if (state.Status == DayStatus.Running &&
+                state.ElapsedSeconds >= state.DayDurationSeconds - 0.001f)
+                CompleteDay();
         }
 
-        public bool SeatCustomer(int customerId, string tableId, int seatIndex)
+        public bool SeatCustomerAtTable(int customerId, string tableId)
         {
             EnsureRunning();
             if (!state.Customers.TryGetValue(customerId, out var customer) ||
@@ -86,8 +90,8 @@ namespace PatronsRumorsAle.Simulation
                 return false;
 
             var table = FindTable(tableId);
-            var seat = table.GetSeat(seatIndex);
-            if (seat.IsOccupied)
+            var seat = table.GetFirstFreeSeat();
+            if (seat == null)
                 return false;
 
             var outcome = rules.Evaluate(customer, table, state);
@@ -95,25 +99,43 @@ namespace PatronsRumorsAle.Simulation
             seat.CustomerId = customerId;
             customer.Location = CustomerLocation.Table;
             customer.TableId = tableId;
-            customer.SeatIndex = seatIndex;
+            customer.SeatIndex = seat.Index;
             customer.SeatedTime = state.ElapsedSeconds;
             customer.StayRemaining *= outcome.StayMultiplier;
             customer.InitialStaySeconds = customer.StayRemaining;
             spendMultipliers[customerId] = outcome.IndividualSpendMultiplier;
             Metrics.RecordSeated(state.ElapsedSeconds - customer.ArrivalTime);
-            Log("customer_seated", customerId, $"{tableId}:{seatIndex}");
+            Log("customer_seated", customerId, $"{tableId}:{seat.Index}");
 
             if (outcome.IsGoodSeating)
             {
                 ChangeReputation(customer.Faction, balance.goodSeatingReputationReward, customerId, "good_seating");
                 ActivateBonus(customer, outcome.ActiveBonuses[0]);
             }
+            else if (outcome.ReputationDelta < 0f)
+            {
+                ChangeReputation(
+                    customer.Faction,
+                    outcome.ReputationDelta,
+                    customerId,
+                    "unmet_faction_expectation");
+            }
             if (customer.Faction == FactionId.Moonshiners && rules.CountActiveMoonshiners(state) == 1)
                 ActivateBonus(customer, "Moonshiner trade");
             return true;
         }
 
-        public SeatingOutcome PreviewPlacement(int customerId, string tableId, int seatIndex)
+        public bool SeatCustomer(int customerId, string tableId, int seatIndex)
+        {
+            EnsureRunning();
+            var table = FindTable(tableId);
+            if (table.GetSeat(seatIndex).IsOccupied ||
+                table.GetFirstFreeSeat()?.Index != seatIndex)
+                return false;
+            return SeatCustomerAtTable(customerId, tableId);
+        }
+
+        public SeatingOutcome PreviewPlacement(int customerId, string tableId)
         {
             EnsureInitialized();
             if (!state.Customers.TryGetValue(customerId, out var customer) ||
@@ -121,8 +143,8 @@ namespace PatronsRumorsAle.Simulation
                 throw new InvalidOperationException("Only a queued customer can be previewed.");
 
             var table = FindTable(tableId);
-            if (table.GetSeat(seatIndex).IsOccupied)
-                throw new InvalidOperationException("Only a free seat can be previewed.");
+            if (table.FreeSeatCount == 0)
+                throw new InvalidOperationException("Only a table with a free seat can be previewed.");
             return rules.Evaluate(customer, table, state);
         }
 
@@ -223,7 +245,7 @@ namespace PatronsRumorsAle.Simulation
             Log("customer_left_table", customer.Id, customer.TableId);
             Log("money_earned", customer.Id, customer.TableId, earned);
 
-            if (customer.InitialStaySeconds > content.GetArchetype(customer.ArchetypeId).staySeconds)
+            if (customer.InitialStaySeconds > content.GetFaction(customer.Faction.ToString()).baseStayTimeSeconds)
                 ChangeReputation(customer.Faction, balance.longStayReputationReward, customer.Id, "long_stay");
             if (customer.Faction == FactionId.Moonshiners && rules.CountActiveMoonshiners(state) == 0)
                 Log("faction_bonus_deactivated", customer.Id, "Moonshiner trade");
@@ -238,23 +260,47 @@ namespace PatronsRumorsAle.Simulation
 
         private CustomerInstance AddRandomCustomer()
         {
-            var faction = ChooseFaction();
+            var factionId = ChooseFaction();
+            var faction = content.GetFaction(factionId);
             var candidates = new List<ArchetypeDefinition>();
             for (var i = 0; i < content.Archetypes.Count; i++)
             {
-                if (string.Equals(content.Archetypes[i].factionId, faction, StringComparison.OrdinalIgnoreCase))
+                if (string.IsNullOrEmpty(content.Archetypes[i].factionId) ||
+                    string.Equals(content.Archetypes[i].factionId, factionId, StringComparison.OrdinalIgnoreCase))
                     candidates.Add(content.Archetypes[i]);
             }
             if (candidates.Count == 0)
-                throw new InvalidOperationException($"No archetypes configured for faction '{faction}'.");
+                throw new InvalidOperationException($"No archetypes configured for faction '{factionId}'.");
 
             var archetype = candidates[random.Next(0, candidates.Count)];
-            var customer = new CustomerInstance(nextCustomerId++, archetype);
+            if (state.Queue.CustomerIds.Count >= day.visibleQueueCapacity)
+            {
+                Metrics.RecordMissedCustomer();
+                if (balance.queueOverflowReputationPenalty > 0f)
+                {
+                    ChangeReputation(
+                        ParseFaction(factionId),
+                        -balance.queueOverflowReputationPenalty,
+                        0,
+                        "queue_overflow");
+                }
+                Log("missed_customer", detail: $"{factionId}:{archetype.id}");
+                return null;
+            }
+
+            var customer = new CustomerInstance(nextCustomerId++, archetype, faction);
             customer.ArrivalTime = state.ElapsedSeconds;
             state.Customers.Add(customer.Id, customer);
             state.Queue.Add(customer.Id);
             Log("customer_arrived", customer.Id, archetype.id);
             return customer;
+        }
+
+        private static FactionId ParseFaction(string value)
+        {
+            if (Enum.TryParse(value, true, out FactionId result))
+                return result;
+            throw new InvalidOperationException($"Unknown faction id '{value}'.");
         }
 
         private void CompleteDay()

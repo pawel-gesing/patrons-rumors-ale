@@ -181,7 +181,30 @@ namespace PatronsRumorsAle.Presentation
         private void DrawTable(TableState table, Rect area)
         {
             GUI.DrawTexture(area, panelTexture);
-            GUI.Label(new Rect(area.x + 10, area.y + 8, area.width - 20, 32), table.Id.ToUpperInvariant(), headingStyle);
+            var tableButton = new Rect(area.x + 8, area.y + 6, area.width - 16, 38);
+            var tableColor = GUI.backgroundColor;
+            GUI.backgroundColor = table.FreeSeatCount > 0 && selectedCustomerId.HasValue
+                ? new Color(0.55f, 0.85f, 0.55f)
+                : Color.white;
+            if (GUI.Button(
+                    tableButton,
+                    $"{table.Id.ToUpperInvariant()}  {table.OccupiedSeatCount}/{table.Seats.Count}",
+                    buttonStyle) &&
+                selectedCustomerId.HasValue &&
+                table.FreeSeatCount > 0)
+            {
+                if (simulation.SeatCustomerAtTable(selectedCustomerId.Value, table.Id))
+                    selectedCustomerId = null;
+            }
+            GUI.backgroundColor = tableColor;
+
+            if (selectedCustomerId.HasValue &&
+                table.FreeSeatCount > 0 &&
+                area.Contains(Event.current.mousePosition))
+            {
+                hoveredPreview = simulation.PreviewPlacement(selectedCustomerId.Value, table.Id);
+                hoveredPreviewTarget = table.Id;
+            }
 
             var columns = table.Seats.Count <= 2 ? 2 : 3;
             const float seatWidth = 100f;
@@ -207,19 +230,7 @@ namespace PatronsRumorsAle.Presentation
                 }
                 else
                 {
-                    GUI.backgroundColor = selectedCustomerId.HasValue ? new Color(0.55f, 0.85f, 0.55f) : Color.gray;
-                    var seatRect = new Rect(x, y, seatWidth, seatHeight);
-                    if (selectedCustomerId.HasValue && seatRect.Contains(Event.current.mousePosition))
-                    {
-                        hoveredPreview = simulation.PreviewPlacement(selectedCustomerId.Value, table.Id, i);
-                        hoveredPreviewTarget = $"{table.Id}, seat {i + 1}";
-                    }
-                    if (GUI.Button(seatRect, "FREE\nSEAT") && selectedCustomerId.HasValue)
-                    {
-                        if (simulation.SeatCustomer(selectedCustomerId.Value, table.Id, i))
-                            selectedCustomerId = null;
-                    }
-                    GUI.backgroundColor = Color.white;
+                    GUI.Box(new Rect(x, y, seatWidth, seatHeight), $"FREE\nSLOT {i + 1}", centeredStyle);
                 }
             }
         }
@@ -265,28 +276,33 @@ namespace PatronsRumorsAle.Presentation
             if (!selectedCustomerId.HasValue)
             {
                 GUI.Label(new Rect(1320, 385, 240, 100),
-                    "Select a queued patron, then point at a free seat.", centeredStyle);
+                    "Select a queued patron, then point at a table.", centeredStyle);
                 return;
             }
 
             if (hoveredPreview == null)
             {
-                GUI.Label(new Rect(1320, 385, 240, 100), "Point at a free seat to compare the effect.", centeredStyle);
+                GUI.Label(new Rect(1320, 385, 240, 100), "Point at a table with a free place.", centeredStyle);
                 return;
             }
 
             var bonuses = hoveredPreview.ActiveBonuses.Count == 0
                 ? "none"
                 : string.Join(", ", hoveredPreview.ActiveBonuses);
-            var warning = hoveredPreview.Warnings.Count == 0
-                ? "No negative effect on current patrons."
-                : string.Join("\n", hoveredPreview.Warnings);
+            var factions = hoveredPreview.PresentFactions.Count == 0
+                ? "empty table"
+                : string.Join(", ", hoveredPreview.PresentFactions);
+            var placement = hoveredPreview.IsGoodSeating
+                ? "faction bonus active"
+                : "neutral seating, no faction bonus";
             GUI.Label(new Rect(1320, 382, 240, 125),
                 $"{hoveredPreviewTarget}\n" +
-                $"Faction condition: {(hoveredPreview.IsGoodSeating ? "MET" : "not met")}\n" +
+                $"At table {hoveredPreview.CurrentCustomerCount}, free {hoveredPreview.FreeSeats}\n" +
+                $"Factions: {factions}\n" +
+                $"{placement}\n" +
                 $"Spend x{hoveredPreview.SpendMultiplier:0.00} | Stay x{hoveredPreview.StayMultiplier:0.00}\n" +
                 $"Reputation {hoveredPreview.ReputationDelta:+0.0;-0.0;0.0}\n" +
-                $"Bonuses: {bonuses}\n{warning}",
+                $"Bonuses: {bonuses}",
                 centeredStyle);
         }
 
@@ -357,7 +373,8 @@ namespace PatronsRumorsAle.Presentation
                 new Rect(290, 175, 1020, 500), summaryScroll, new Rect(0, 0, 990, 700));
             GUI.Label(new Rect(0, 0, 990, 35),
                 $"Money {summary.MoneyEarned} / {summary.MoneyGoal} | Served {summary.ServedCustomers} | " +
-                $"Impatient {summary.ImpatientDepartures} | Rejected {summary.RejectedCustomers}", headingStyle);
+                $"Impatient {summary.ImpatientDepartures} | Rejected {summary.RejectedCustomers} | " +
+                $"Missed {summary.MissedCustomers}", headingStyle);
             GUI.Label(new Rect(0, 45, 990, 30),
                 $"Avg wait {summary.AverageWaitSeconds:0.0}s | Avg stay {summary.AverageStaySeconds:0.0}s | " +
                 $"Best table {(string.IsNullOrEmpty(summary.BestEarningTableId) ? "none" : summary.BestEarningTableId)} " +
@@ -402,6 +419,7 @@ namespace PatronsRumorsAle.Presentation
             {
                 case "customer_seated": return $"Customer #{simulationEvent.CustomerId} seated.";
                 case "customer_left_queue_impatient": return $"Customer #{simulationEvent.CustomerId} left queue.";
+                case "missed_customer": return $"Queue full: missed {simulationEvent.Detail}.";
                 case "customer_left_table": return $"Customer #{simulationEvent.CustomerId} left table.";
                 case "money_earned": return $"+{simulationEvent.Value:0} money at {simulationEvent.Detail}.";
                 case "reputation_changed":

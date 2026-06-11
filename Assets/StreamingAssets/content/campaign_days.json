@@ -3,9 +3,10 @@
     {
       "id": "day_001_intro",
       "displayName": "Spokojny poczatek",
-      "durationSeconds": 240.0,
-      "arrivalIntervalSeconds": 18.0,
-      "startingCustomers": 4,
+      "durationSeconds": 180.0,
+      "arrivalIntervalSeconds": 7.0,
+      "startingQueue": 5,
+      "visibleQueueCapacity": 5,
       "moneyGoal": 180,
       "tables": [
         { "id": "table_2a", "seats": 2 },
@@ -28,9 +29,10 @@
     {
       "id": "day_002_sarmatian_evening",
       "displayName": "Sarmacki wieczor",
-      "durationSeconds": 270.0,
-      "arrivalIntervalSeconds": 16.0,
-      "startingCustomers": 5,
+      "durationSeconds": 180.0,
+      "arrivalIntervalSeconds": 7.0,
+      "startingQueue": 5,
+      "visibleQueueCapacity": 5,
       "moneyGoal": 300,
       "tables": [
         { "id": "table_2a", "seats": 2 },
@@ -53,9 +55,10 @@
     {
       "id": "day_003_crowded_agitation",
       "displayName": "Tloczna agitacja",
-      "durationSeconds": 300.0,
-      "arrivalIntervalSeconds": 9.0,
-      "startingCustomers": 8,
+      "durationSeconds": 180.0,
+      "arrivalIntervalSeconds": 7.0,
+      "startingQueue": 5,
+      "visibleQueueCapacity": 5,
       "moneyGoal": 360,
       "tables": [
         { "id": "table_2a", "seats": 2 },
@@ -72,8 +75,7 @@
       "groupSizeWeights": [
         { "size": 1, "weight": 1.0 },
         { "size": 2, "weight": 3.0 },
-        { "size": 3, "weight": 4.0 },
-        { "size": 4, "weight": 2.0 }
+        { "size": 3, "weight": 4.0 }
       ]
     }
   ]

@@ -23,28 +23,28 @@ namespace PatronsRumorsAle.Simulation
             var bestScore = int.MinValue;
             var bestCustomerId = -1;
             TableState bestTable = null;
-            var bestSeatIndex = -1;
-
             foreach (var customerId in simulation.State.Queue.CustomerIds)
             {
                 var customer = simulation.State.Customers[customerId];
                 foreach (var table in simulation.State.Tables)
                 {
+                    if (table.FreeSeatCount == 0)
+                        continue;
                     var score = Score(customer, table, simulation.State, strategy);
-                    for (var seatIndex = 0; seatIndex < table.Seats.Count; seatIndex++)
-                    {
-                        if (table.Seats[seatIndex].IsOccupied || score <= bestScore)
-                            continue;
-                        bestScore = score;
-                        bestCustomerId = customerId;
-                        bestTable = table;
-                        bestSeatIndex = seatIndex;
-                    }
+                    if (score <= bestScore)
+                        continue;
+                    bestScore = score;
+                    bestCustomerId = customerId;
+                    bestTable = table;
+                    if (strategy == AutoPlayStrategy.FirstAvailable)
+                        break;
                 }
+                if (strategy == AutoPlayStrategy.FirstAvailable && bestTable != null)
+                    break;
             }
 
             return bestTable != null &&
-                simulation.SeatCustomer(bestCustomerId, bestTable.Id, bestSeatIndex);
+                simulation.SeatCustomerAtTable(bestCustomerId, bestTable.Id);
         }
 
         private static int Score(

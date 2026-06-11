@@ -1,9 +1,8 @@
 {
   "factions": [
-    { "id": "Sarmatians", "displayName": "Sarmaci", "color": "#B87A24" },
-    { "id": "Moonshiners", "displayName": "Bimbrownicy", "color": "#408C47" },
-    { "id": "Revolutionaries", "displayName": "Rewolucjonisci", "color": "#AD2E2E" },
-    { "id": "Neutrals", "displayName": "Neutralni", "color": "#596B85" }
+    { "id": "Sarmatians", "displayName": "Sarmaci", "color": "#B87A24", "patienceSeconds": 45.0, "baseStayTimeSeconds": 30.0, "baseSpend": 20 },
+    { "id": "Moonshiners", "displayName": "Bimbrownicy", "color": "#408C47", "patienceSeconds": 38.0, "baseStayTimeSeconds": 30.0, "baseSpend": 14 },
+    { "id": "Revolutionaries", "displayName": "Rewolucjonisci", "color": "#AD2E2E", "patienceSeconds": 34.0, "baseStayTimeSeconds": 30.0, "baseSpend": 12 },
+    { "id": "Neutrals", "displayName": "Neutralni", "color": "#596B85", "patienceSeconds": 50.0, "baseStayTimeSeconds": 30.0, "baseSpend": 14 }
   ]
 }
-
