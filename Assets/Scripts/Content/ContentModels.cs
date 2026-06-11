@@ -63,14 +63,31 @@ namespace PatronsRumorsAle.Content
     }
 
     [Serializable]
+    public sealed class FactionWeightDefinition
+    {
+        public string factionId;
+        public float weight;
+    }
+
+    [Serializable]
+    public sealed class GroupSizeWeightDefinition
+    {
+        public int size;
+        public float weight;
+    }
+
+    [Serializable]
     public sealed class DayDefinition
     {
         public string id;
         public string displayName;
         public float durationSeconds;
+        public float arrivalIntervalSeconds;
         public int startingCustomers;
         public int moneyGoal;
         public List<TableDefinition> tables = new List<TableDefinition>();
+        public List<FactionWeightDefinition> factionArrivalWeights = new List<FactionWeightDefinition>();
+        public List<GroupSizeWeightDefinition> groupSizeWeights = new List<GroupSizeWeightDefinition>();
     }
 
     [Serializable]
@@ -82,18 +99,15 @@ namespace PatronsRumorsAle.Content
     [Serializable]
     public sealed class BalanceDefinition
     {
-        public float arrivalIntervalSeconds = 15f;
-        public int arrivalGroupMin = 1;
-        public int arrivalGroupMax = 3;
-        public float reputationDriftPerSecond = 0.05f;
-        public float impatientReputationPenalty = 5f;
-        public float rejectionReputationPenalty = 7f;
-        public float goodSeatingReputationReward = 2f;
-        public float longStayReputationReward = 3f;
-        public float sarmatianCompanionStayBonus = 0.2f;
-        public float sarmatianCompanionSpendBonus = 0.25f;
-        public float revolutionaryAudienceStayBonus = 0.15f;
-        public float moonshinerGlobalSpendBonus = 0.1f;
+        public float reputationDriftPerSecond;
+        public float impatientReputationPenalty;
+        public float rejectionReputationPenalty;
+        public float goodSeatingReputationReward;
+        public float longStayReputationReward;
+        public float sarmatianCompanionStayBonus;
+        public float sarmatianCompanionSpendBonus;
+        public float revolutionaryAudienceStayBonus;
+        public float moonshinerGlobalSpendBonus;
     }
 
     public sealed class ContentDatabase
@@ -141,4 +155,3 @@ namespace PatronsRumorsAle.Content
         }
     }
 }
-

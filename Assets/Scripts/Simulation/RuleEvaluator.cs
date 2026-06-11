@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using PatronsRumorsAle.Content;
 
 namespace PatronsRumorsAle.Simulation
@@ -6,7 +7,11 @@ namespace PatronsRumorsAle.Simulation
     {
         public float StayMultiplier { get; set; } = 1f;
         public float SpendMultiplier { get; set; } = 1f;
+        public float IndividualSpendMultiplier { get; set; } = 1f;
         public bool IsGoodSeating { get; set; }
+        public float ReputationDelta { get; set; }
+        public List<string> ActiveBonuses { get; } = new List<string>();
+        public List<string> Warnings { get; } = new List<string>();
     }
 
     public sealed class RuleEvaluator
@@ -40,20 +45,39 @@ namespace PatronsRumorsAle.Simulation
             if (customer.Faction == FactionId.Sarmatians && sameFaction > 0)
             {
                 outcome.StayMultiplier += balance.sarmatianCompanionStayBonus * sameFaction;
-                outcome.SpendMultiplier += balance.sarmatianCompanionSpendBonus * sameFaction;
+                outcome.IndividualSpendMultiplier += balance.sarmatianCompanionSpendBonus * sameFaction;
                 outcome.IsGoodSeating = true;
+                outcome.ActiveBonuses.Add("Sarmatian companions");
             }
 
             if (customer.Faction == FactionId.Revolutionaries && neutralCount + revolutionaryCount > 0)
             {
                 outcome.StayMultiplier += balance.revolutionaryAudienceStayBonus;
                 outcome.IsGoodSeating = true;
+                outcome.ActiveBonuses.Add("Revolutionary audience");
             }
 
+            var moonshinersAfterSeating = CountActiveMoonshiners(state);
+            if (customer.Faction == FactionId.Moonshiners)
+                moonshinersAfterSeating++;
+            if (moonshinersAfterSeating > 0)
+            {
+                outcome.ActiveBonuses.Add("Moonshiner trade");
+            }
+
+            outcome.SpendMultiplier = outcome.IndividualSpendMultiplier *
+                (1f + moonshinersAfterSeating * balance.moonshinerGlobalSpendBonus);
+            if (outcome.IsGoodSeating)
+                outcome.ReputationDelta = balance.goodSeatingReputationReward;
             return outcome;
         }
 
         public float GetMoonshinerSpendMultiplier(GameState state)
+        {
+            return 1f + CountActiveMoonshiners(state) * balance.moonshinerGlobalSpendBonus;
+        }
+
+        public int CountActiveMoonshiners(GameState state)
         {
             var activeMoonshiners = 0;
             foreach (var customer in state.Customers.Values)
@@ -61,9 +85,7 @@ namespace PatronsRumorsAle.Simulation
                 if (customer.Location == CustomerLocation.Table && customer.Faction == FactionId.Moonshiners)
                     activeMoonshiners++;
             }
-
-            return 1f + activeMoonshiners * balance.moonshinerGlobalSpendBonus;
+            return activeMoonshiners;
         }
     }
 }
-

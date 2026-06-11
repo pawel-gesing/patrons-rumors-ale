@@ -1,7 +1,9 @@
 using System.Collections.Generic;
+using System.Linq;
 using NUnit.Framework;
 using PatronsRumorsAle.Content;
 using PatronsRumorsAle.Simulation;
+using UnityEngine;
 
 namespace PatronsRumorsAle.Tests
 {
@@ -147,17 +149,168 @@ namespace PatronsRumorsAle.Tests
             Assert.That(simulation.State.Status, Is.EqualTo(DayStatus.Completed));
         }
 
+        [Test]
+        public void Metrics_CollectMoneyCountsAndTimes()
+        {
+            var simulation = CreateSimulation(
+                new[] { Archetype("guest", "Neutrals", stay: 1f, spend: 17) },
+                startingCustomers: 3);
+            var served = simulation.State.Queue.CustomerIds[0];
+            var rejected = simulation.State.Queue.CustomerIds[1];
+            simulation.Advance(0.5f);
+            simulation.SeatCustomer(served, "table", 0);
+            simulation.RejectCustomer(rejected);
+            simulation.Advance(1.1f);
+
+            var summary = simulation.GetDaySummary();
+
+            Assert.That(summary.ServedCustomers, Is.EqualTo(1));
+            Assert.That(summary.RejectedCustomers, Is.EqualTo(1));
+            Assert.That(summary.AverageWaitSeconds, Is.EqualTo(0.5f).Within(0.11f));
+            Assert.That(summary.AverageStaySeconds, Is.EqualTo(1f).Within(0.11f));
+            Assert.That(summary.MoneyByTable["table"], Is.EqualTo(17));
+            Assert.That(summary.BestEarningTableId, Is.EqualTo("table"));
+        }
+
+        [TestCase(10, DayStatus.Completed)]
+        [TestCase(11, DayStatus.Failed)]
+        public void Summary_ReportsSuccessOrFailure(int goal, DayStatus expected)
+        {
+            var simulation = CreateSimulation(
+                new[] { Archetype("guest", "Neutrals", stay: 0.5f, spend: 10) },
+                duration: 2f,
+                moneyGoal: goal);
+            simulation.SeatCustomer(simulation.State.Queue.CustomerIds[0], "table", 0);
+
+            simulation.Advance(2f);
+
+            Assert.That(simulation.GetDaySummary().Status, Is.EqualTo(expected));
+        }
+
+        [Test]
+        public void ReputationMetrics_AreGroupedByFactionAndReason()
+        {
+            var simulation = CreateSimulation(
+                new[] { Archetype("guest", "Neutrals") },
+                startingCustomers: 2);
+            var ids = simulation.State.Queue.CustomerIds.ToArray();
+
+            simulation.RejectCustomer(ids[0]);
+            simulation.RejectCustomer(ids[1]);
+
+            var metric = simulation.GetDaySummary().ReputationChanges.Single(
+                item => item.Faction == FactionId.Neutrals && item.Reason == "rejected");
+            Assert.That(metric.Delta, Is.EqualTo(-14f));
+        }
+
+        [Test]
+        public void PlacementPreview_SarmatianWithSarmatian_ShowsBonuses()
+        {
+            var simulation = CreateSimulation(
+                new[] { Archetype("noble", "Sarmatians") },
+                startingCustomers: 2);
+            simulation.SeatCustomer(simulation.State.Queue.CustomerIds[0], "table", 0);
+
+            var preview = simulation.PreviewPlacement(simulation.State.Queue.CustomerIds[0], "table", 1);
+
+            Assert.That(preview.IsGoodSeating, Is.True);
+            Assert.That(preview.SpendMultiplier, Is.EqualTo(1.25f).Within(0.001f));
+            Assert.That(preview.StayMultiplier, Is.EqualTo(1.2f).Within(0.001f));
+            CollectionAssert.Contains(preview.ActiveBonuses, "Sarmatian companions");
+        }
+
+        [Test]
+        public void PlacementPreview_RevolutionaryWithNeutral_ShowsAudienceBonus()
+        {
+            var simulation = CreateSimulation(
+                new[]
+                {
+                    Archetype("worker", "Neutrals"),
+                    Archetype("agitator", "Revolutionaries")
+                },
+                startingCustomers: 12);
+            var neutral = FindQueued(simulation, FactionId.Neutrals);
+            simulation.SeatCustomer(neutral, "table", 0);
+            var revolutionary = FindQueued(simulation, FactionId.Revolutionaries);
+
+            var preview = simulation.PreviewPlacement(revolutionary, "table", 1);
+
+            Assert.That(preview.IsGoodSeating, Is.True);
+            Assert.That(preview.StayMultiplier, Is.EqualTo(1.15f).Within(0.001f));
+            CollectionAssert.Contains(preview.ActiveBonuses, "Revolutionary audience");
+        }
+
+        [Test]
+        public void PlacementPreview_Moonshiner_ShowsGlobalSpendBonus()
+        {
+            var simulation = CreateSimulation(new[] { Archetype("distiller", "Moonshiners") });
+
+            var preview = simulation.PreviewPlacement(simulation.State.Queue.CustomerIds[0], "table", 0);
+
+            Assert.That(preview.SpendMultiplier, Is.EqualTo(1.1f).Within(0.001f));
+            CollectionAssert.Contains(preview.ActiveBonuses, "Moonshiner trade");
+        }
+
+        [Test]
+        public void ImpatientDeparture_AddsEventAndMetric()
+        {
+            var simulation = CreateSimulation(new[] { Archetype("guest", "Neutrals", patience: 0.5f) });
+
+            simulation.Advance(0.6f);
+
+            Assert.That(simulation.EventLog.Events.Any(item => item.Type == "customer_left_queue_impatient"), Is.True);
+            Assert.That(simulation.GetDaySummary().ImpatientDepartures, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void ContentLoader_LoadsThreeDistinctDaysFromJson()
+        {
+            var content = ContentLoader.LoadFromStreamingAssets();
+
+            Assert.That(content.Days.Count, Is.GreaterThanOrEqualTo(3));
+            Assert.That(content.GetDay("day_001_intro").moneyGoal, Is.LessThan(
+                content.GetDay("day_003_crowded_agitation").moneyGoal));
+            Assert.That(content.GetDay("day_002_sarmatian_evening").factionArrivalWeights
+                .Single(item => item.factionId == "Sarmatians").weight, Is.EqualTo(6f));
+        }
+
+        [Test]
+        public void Simulation_UsesArbitraryDayDefinitionWithoutKnownId()
+        {
+            var simulation = CreateSimulation(
+                new[] { Archetype("guest", "Neutrals") },
+                duration: 3f,
+                moneyGoal: 0,
+                dayId: "designer_test_day");
+
+            simulation.Advance(3f);
+
+            Assert.That(simulation.Day.id, Is.EqualTo("designer_test_day"));
+            Assert.That(simulation.State.Status, Is.EqualTo(DayStatus.Completed));
+        }
+
+        [Test]
+        public void Advance_LargeTimeStep_RemainsStableAndCompletesDay()
+        {
+            var simulation = CreateSimulation(
+                new[] { Archetype("guest", "Neutrals", patience: 1f) },
+                duration: 5f,
+                moneyGoal: 9999);
+
+            Assert.DoesNotThrow(() => simulation.Advance(100000f));
+            Assert.That(simulation.State.ElapsedSeconds, Is.EqualTo(5f));
+            Assert.That(simulation.State.Status, Is.EqualTo(DayStatus.Failed));
+        }
+
         private static DaySimulation CreateSimulation(
             IReadOnlyList<ArchetypeDefinition> archetypes,
             int startingCustomers = 1,
             float duration = 200f,
-            int moneyGoal = 9999)
+            int moneyGoal = 9999,
+            string dayId = "test")
         {
             var balance = new BalanceDefinition
             {
-                arrivalIntervalSeconds = 1000f,
-                arrivalGroupMin = 1,
-                arrivalGroupMax = 1,
                 reputationDriftPerSecond = 0.05f,
                 impatientReputationPenalty = 5f,
                 rejectionReputationPenalty = 7f,
@@ -170,12 +323,25 @@ namespace PatronsRumorsAle.Tests
             };
             var day = new DayDefinition
             {
-                id = "test",
+                id = dayId,
                 durationSeconds = duration,
+                arrivalIntervalSeconds = 1000f,
                 startingCustomers = startingCustomers,
                 moneyGoal = moneyGoal,
-                tables = new List<TableDefinition> { new TableDefinition { id = "table", seats = 20 } }
+                tables = new List<TableDefinition> { new TableDefinition { id = "table", seats = 20 } },
+                groupSizeWeights = new List<GroupSizeWeightDefinition>
+                {
+                    new GroupSizeWeightDefinition { size = 1, weight = 1f }
+                }
             };
+            foreach (var faction in archetypes.Select(item => item.factionId).Distinct())
+            {
+                day.factionArrivalWeights.Add(new FactionWeightDefinition
+                {
+                    factionId = faction,
+                    weight = 1f
+                });
+            }
             var content = new ContentDatabase(
                 new List<FactionDefinition>(),
                 archetypes,

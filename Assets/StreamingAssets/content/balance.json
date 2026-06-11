@@ -1,7 +1,4 @@
 {
-  "arrivalIntervalSeconds": 15.0,
-  "arrivalGroupMin": 1,
-  "arrivalGroupMax": 3,
   "reputationDriftPerSecond": 0.05,
   "impatientReputationPenalty": 5.0,
   "rejectionReputationPenalty": 7.0,

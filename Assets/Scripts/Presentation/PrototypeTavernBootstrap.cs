@@ -7,7 +7,7 @@ namespace PatronsRumorsAle.Presentation
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void CreatePrototype()
         {
-            if (Object.FindFirstObjectByType<PrototypeTavernController>() != null)
+            if (Object.FindAnyObjectByType<PrototypeTavernController>() != null)
                 return;
 
             var root = new GameObject("PrototypeTavern");
@@ -15,4 +15,3 @@ namespace PatronsRumorsAle.Presentation
         }
     }
 }
-

@@ -16,9 +16,17 @@ namespace PatronsRumorsAle.Presentation
         private int? detailsCustomerId;
         private bool paused;
         private float speed = 1f;
+        private int selectedDayIndex;
+        private bool autoPlay;
+        private AutoPlayStrategy autoPlayStrategy;
+        private float autoPlayCooldown;
         private string startupError;
         private string savedTelemetryPath;
         private Vector2 queueScroll;
+        private Vector2 summaryScroll;
+        private SeatingOutcome hoveredPreview;
+        private string hoveredPreviewTarget;
+        private readonly List<string> recentEvents = new List<string>();
         private GUIStyle titleStyle;
         private GUIStyle headingStyle;
         private GUIStyle centeredStyle;
@@ -48,6 +56,15 @@ namespace PatronsRumorsAle.Presentation
             if (simulation == null || paused || simulation.State.Status != DayStatus.Running)
                 return;
             simulation.Advance(Time.deltaTime * speed);
+            if (autoPlay)
+            {
+                autoPlayCooldown -= Time.deltaTime;
+                if (autoPlayCooldown <= 0f)
+                {
+                    AutoPlayRunner.TrySeatNext(simulation, autoPlayStrategy);
+                    autoPlayCooldown = 0.35f;
+                }
+            }
         }
 
         private void OnGUI()
@@ -64,8 +81,11 @@ namespace PatronsRumorsAle.Presentation
             DrawBackground();
             DrawHeader();
             DrawQueue();
+            hoveredPreview = null;
+            hoveredPreviewTarget = "";
             DrawTables();
             DrawDetails();
+            DrawRecentEvents();
             DrawDebugControls();
             DrawEndOverlay();
         }
@@ -75,11 +95,15 @@ namespace PatronsRumorsAle.Presentation
             simulation = new DaySimulation();
             telemetry = new LocalTelemetry();
             simulation.EventLog.EventAdded += telemetry.Record;
-            simulation.Initialize(content.Days[0], content, Environment.TickCount);
+            simulation.EventLog.EventAdded += OnSimulationEvent;
+            simulation.Initialize(content.Days[selectedDayIndex], content, Environment.TickCount);
             selectedCustomerId = null;
             detailsCustomerId = null;
             paused = false;
             speed = 1f;
+            autoPlay = false;
+            autoPlayCooldown = 0f;
+            recentEvents.Clear();
             savedTelemetryPath = null;
         }
 
@@ -98,6 +122,13 @@ namespace PatronsRumorsAle.Presentation
             GUI.Label(new Rect(700, 20, 260, 40), $"Time  {FormatTime(state.RemainingSeconds)}", headingStyle);
             GUI.Label(new Rect(970, 20, 260, 40), $"Money  {state.Economy.Money} / {state.MoneyGoal}", headingStyle);
             GUI.Label(new Rect(1240, 20, 330, 40), $"Status  {state.Status}", headingStyle);
+            GUI.Label(new Rect(520, 60, 1040, 25),
+                $"{simulation.Day.displayName}  |  REP  " +
+                $"S {state.Reputation.Get(FactionId.Sarmatians):+0;-0;0}  " +
+                $"B {state.Reputation.Get(FactionId.Moonshiners):+0;-0;0}  " +
+                $"R {state.Reputation.Get(FactionId.Revolutionaries):+0;-0;0}  " +
+                $"N {state.Reputation.Get(FactionId.Neutrals):+0;-0;0}",
+                smallStyle);
         }
 
         private void DrawQueue()
@@ -177,7 +208,13 @@ namespace PatronsRumorsAle.Presentation
                 else
                 {
                     GUI.backgroundColor = selectedCustomerId.HasValue ? new Color(0.55f, 0.85f, 0.55f) : Color.gray;
-                    if (GUI.Button(new Rect(x, y, seatWidth, seatHeight), "FREE\nSEAT") && selectedCustomerId.HasValue)
+                    var seatRect = new Rect(x, y, seatWidth, seatHeight);
+                    if (selectedCustomerId.HasValue && seatRect.Contains(Event.current.mousePosition))
+                    {
+                        hoveredPreview = simulation.PreviewPlacement(selectedCustomerId.Value, table.Id, i);
+                        hoveredPreviewTarget = $"{table.Id}, seat {i + 1}";
+                    }
+                    if (GUI.Button(seatRect, "FREE\nSEAT") && selectedCustomerId.HasValue)
                     {
                         if (simulation.SeatCustomer(selectedCustomerId.Value, table.Id, i))
                             selectedCustomerId = null;
@@ -193,49 +230,72 @@ namespace PatronsRumorsAle.Presentation
             if (!detailsCustomerId.HasValue ||
                 !simulation.State.Customers.TryGetValue(detailsCustomerId.Value, out var customer))
             {
-                GUI.Label(new Rect(1320, 165, 240, 100), "Select a patron to inspect them.", centeredStyle);
-                DrawReputation(1320, 470);
+                GUI.Label(new Rect(1320, 155, 240, 80), "Select a patron to inspect them.", centeredStyle);
+                DrawPlacementPreview();
                 return;
             }
 
             GUI.backgroundColor = FactionColor(customer.Faction);
-            GUI.Box(new Rect(1320, 160, 240, 210), GUIContent.none);
+            GUI.Box(new Rect(1320, 150, 240, 145), GUIContent.none);
             GUI.backgroundColor = Color.white;
-            GUI.Label(new Rect(1335, 175, 210, 35), $"#{customer.Id} {customer.DisplayName}", headingStyle);
-            GUI.Label(new Rect(1335, 220, 210, 26), customer.Faction.ToString(), centeredStyle);
-            GUI.Label(new Rect(1335, 255, 210, 26), $"Location: {customer.Location}", centeredStyle);
-            GUI.Label(new Rect(1335, 290, 210, 26),
+            GUI.Label(new Rect(1335, 160, 210, 30), $"#{customer.Id} {customer.DisplayName}", headingStyle);
+            GUI.Label(new Rect(1335, 193, 210, 22), customer.Faction.ToString(), centeredStyle);
+            GUI.Label(new Rect(1335, 218, 210, 22), $"Location: {customer.Location}", centeredStyle);
+            GUI.Label(new Rect(1335, 243, 210, 22),
                 customer.Location == CustomerLocation.Queue
                     ? $"Patience: {customer.PatienceRemaining:0.0}s"
                     : $"Stay: {customer.StayRemaining:0.0}s",
                 centeredStyle);
-            GUI.Label(new Rect(1335, 325, 210, 26), $"Base spend: {customer.BaseSpend}", centeredStyle);
+            GUI.Label(new Rect(1335, 268, 210, 22), $"Base spend: {customer.BaseSpend}", centeredStyle);
 
             if (customer.Location == CustomerLocation.Queue &&
-                GUI.Button(new Rect(1340, 390, 200, 55), "REJECT", buttonStyle))
+                GUI.Button(new Rect(1340, 302, 200, 38), "REJECT", buttonStyle))
             {
                 simulation.RejectCustomer(customer.Id);
                 if (selectedCustomerId == customer.Id)
                     selectedCustomerId = null;
             }
 
-            DrawReputation(1320, 470);
+            DrawPlacementPreview();
         }
 
-        private void DrawReputation(float x, float y)
+        private void DrawPlacementPreview()
         {
-            GUI.Label(new Rect(x, y, 240, 35), "REPUTATION", headingStyle);
-            var row = 0;
-            foreach (FactionId faction in Enum.GetValues(typeof(FactionId)))
+            GUI.Label(new Rect(1320, 350, 240, 30), "PLACEMENT PREVIEW", headingStyle);
+            if (!selectedCustomerId.HasValue)
             {
-                var value = simulation.State.Reputation.Get(faction);
-                GUI.backgroundColor = FactionColor(faction);
-                GUI.Box(new Rect(x, y + 45 + row * 42, 240, 34), GUIContent.none);
-                GUI.backgroundColor = Color.white;
-                GUI.Label(new Rect(x + 8, y + 49 + row * 42, 165, 26), faction.ToString(), smallStyle);
-                GUI.Label(new Rect(x + 175, y + 49 + row * 42, 55, 26), value.ToString("+0.0;-0.0;0.0"), centeredStyle);
-                row++;
+                GUI.Label(new Rect(1320, 385, 240, 100),
+                    "Select a queued patron, then point at a free seat.", centeredStyle);
+                return;
             }
+
+            if (hoveredPreview == null)
+            {
+                GUI.Label(new Rect(1320, 385, 240, 100), "Point at a free seat to compare the effect.", centeredStyle);
+                return;
+            }
+
+            var bonuses = hoveredPreview.ActiveBonuses.Count == 0
+                ? "none"
+                : string.Join(", ", hoveredPreview.ActiveBonuses);
+            var warning = hoveredPreview.Warnings.Count == 0
+                ? "No negative effect on current patrons."
+                : string.Join("\n", hoveredPreview.Warnings);
+            GUI.Label(new Rect(1320, 382, 240, 125),
+                $"{hoveredPreviewTarget}\n" +
+                $"Faction condition: {(hoveredPreview.IsGoodSeating ? "MET" : "not met")}\n" +
+                $"Spend x{hoveredPreview.SpendMultiplier:0.00} | Stay x{hoveredPreview.StayMultiplier:0.00}\n" +
+                $"Reputation {hoveredPreview.ReputationDelta:+0.0;-0.0;0.0}\n" +
+                $"Bonuses: {bonuses}\n{warning}",
+                centeredStyle);
+        }
+
+        private void DrawRecentEvents()
+        {
+            GUI.Label(new Rect(1320, 510, 240, 30), "RECENT EVENTS", headingStyle);
+            var first = Math.Max(0, recentEvents.Count - 7);
+            for (var i = first; i < recentEvents.Count; i++)
+                GUI.Label(new Rect(1320, 545 + (i - first) * 25, 240, 24), recentEvents[i], smallStyle);
         }
 
         private void DrawDebugControls()
@@ -254,29 +314,104 @@ namespace PatronsRumorsAle.Presentation
             if (GUI.Button(new Rect(680, 775, 220, 45), "SKIP NEXT EVENT", buttonStyle) &&
                 simulation.State.Status == DayStatus.Running)
                 simulation.SkipToNextEvent();
-            if (GUI.Button(new Rect(915, 775, 190, 45), "RESTART DAY", buttonStyle))
+            if (GUI.Button(new Rect(915, 775, 150, 45), "RESTART", buttonStyle))
                 StartDay();
-            if (GUI.Button(new Rect(1120, 775, 220, 45), "SAVE TELEMETRY", buttonStyle))
+            if (GUI.Button(new Rect(1075, 775, 170, 45), "SAVE LOG", buttonStyle))
                 savedTelemetryPath = telemetry.SaveToJson();
+            if (GUI.Button(new Rect(1255, 775, 145, 45), autoPlay ? "AUTO: ON" : "AUTO: OFF", buttonStyle))
+                autoPlay = !autoPlay;
+            if (GUI.Button(new Rect(1410, 775, 150, 45), autoPlayStrategy.ToString(), buttonStyle))
+                autoPlayStrategy = (AutoPlayStrategy)(((int)autoPlayStrategy + 1) %
+                    Enum.GetValues(typeof(AutoPlayStrategy)).Length);
 
-            GUI.Label(new Rect(210, 835, 420, 28), $"Speed: x{speed:0} | Events: {telemetry.Count}", smallStyle);
-            if (!string.IsNullOrEmpty(savedTelemetryPath))
-                GUI.Label(new Rect(650, 835, 890, 28), savedTelemetryPath, smallStyle);
+            GUI.Label(new Rect(35, 835, 150, 28), "DAY:", smallStyle);
+            for (var i = 0; i < content.Days.Count; i++)
+            {
+                var oldColor = GUI.backgroundColor;
+                if (i == selectedDayIndex)
+                    GUI.backgroundColor = new Color(0.65f, 0.85f, 0.65f);
+                if (GUI.Button(new Rect(90 + i * 285, 830, 275, 35), content.Days[i].id))
+                {
+                    selectedDayIndex = i;
+                    StartDay();
+                }
+                GUI.backgroundColor = oldColor;
+            }
+            GUI.Label(new Rect(960, 835, 580, 28),
+                !string.IsNullOrEmpty(savedTelemetryPath)
+                    ? savedTelemetryPath
+                    : $"Speed x{speed:0} | Events {telemetry.Count}",
+                smallStyle);
         }
 
         private void DrawEndOverlay()
         {
             if (simulation.State.Status == DayStatus.Running)
                 return;
-            GUI.Box(new Rect(475, 280, 650, 260), GUIContent.none);
-            GUI.Label(new Rect(500, 310, 600, 60),
-                simulation.State.Status == DayStatus.Completed ? "DAY COMPLETED" : "DAY FAILED",
-                titleStyle);
-            GUI.Label(new Rect(500, 390, 600, 40),
-                $"Earned {simulation.State.Economy.Money} / {simulation.State.MoneyGoal}",
-                headingStyle);
-            if (GUI.Button(new Rect(650, 465, 300, 55), "PLAY AGAIN", buttonStyle))
+            var summary = simulation.GetDaySummary();
+            GUI.Box(new Rect(250, 90, 1100, 700), GUIContent.none);
+            GUI.Label(new Rect(280, 110, 1040, 55),
+                summary.Status == DayStatus.Completed ? "DAY COMPLETED" : "DAY FAILED", titleStyle);
+
+            summaryScroll = GUI.BeginScrollView(
+                new Rect(290, 175, 1020, 500), summaryScroll, new Rect(0, 0, 990, 700));
+            GUI.Label(new Rect(0, 0, 990, 35),
+                $"Money {summary.MoneyEarned} / {summary.MoneyGoal} | Served {summary.ServedCustomers} | " +
+                $"Impatient {summary.ImpatientDepartures} | Rejected {summary.RejectedCustomers}", headingStyle);
+            GUI.Label(new Rect(0, 45, 990, 30),
+                $"Avg wait {summary.AverageWaitSeconds:0.0}s | Avg stay {summary.AverageStaySeconds:0.0}s | " +
+                $"Best table {(string.IsNullOrEmpty(summary.BestEarningTableId) ? "none" : summary.BestEarningTableId)} " +
+                $"({summary.BestEarningTableMoney}) | Bonuses {summary.ActivatedFactionBonuses}", centeredStyle);
+
+            GUI.Label(new Rect(0, 90, 480, 30), "FINAL REPUTATION", headingStyle);
+            var row = 0;
+            foreach (FactionId faction in Enum.GetValues(typeof(FactionId)))
+            {
+                GUI.Label(new Rect(30, 125 + row * 30, 420, 26),
+                    $"{faction}: {summary.FinalReputation[faction]:+0.0;-0.0;0.0}", smallStyle);
+                row++;
+            }
+
+            GUI.Label(new Rect(500, 90, 460, 30), "REPUTATION CHANGES BY REASON", headingStyle);
+            row = 0;
+            foreach (var metric in summary.ReputationChanges)
+            {
+                GUI.Label(new Rect(520, 125 + row * 28, 430, 25),
+                    $"{metric.Faction} / {metric.Reason}: {metric.Delta:+0.0;-0.0;0.0}", smallStyle);
+                row++;
+            }
+            GUI.EndScrollView();
+
+            if (GUI.Button(new Rect(650, 700, 300, 55), "PLAY AGAIN", buttonStyle))
                 StartDay();
+        }
+
+        private void OnSimulationEvent(SimulationEvent simulationEvent)
+        {
+            var message = FormatEvent(simulationEvent);
+            if (message.Length == 0)
+                return;
+            recentEvents.Add($"{FormatTime(simulationEvent.Time)} {message}");
+            if (recentEvents.Count > 30)
+                recentEvents.RemoveAt(0);
+        }
+
+        private static string FormatEvent(SimulationEvent simulationEvent)
+        {
+            switch (simulationEvent.Type)
+            {
+                case "customer_seated": return $"Customer #{simulationEvent.CustomerId} seated.";
+                case "customer_left_queue_impatient": return $"Customer #{simulationEvent.CustomerId} left queue.";
+                case "customer_left_table": return $"Customer #{simulationEvent.CustomerId} left table.";
+                case "money_earned": return $"+{simulationEvent.Value:0} money at {simulationEvent.Detail}.";
+                case "reputation_changed":
+                    return $"Reputation {simulationEvent.Detail} {simulationEvent.Value:+0.0;-0.0;0.0}.";
+                case "faction_bonus_activated": return $"Bonus ON: {simulationEvent.Detail}.";
+                case "faction_bonus_deactivated": return $"Bonus OFF: {simulationEvent.Detail}.";
+                case "goal_completed": return "Day goal completed.";
+                case "day_failed": return "Day goal failed.";
+                default: return "";
+            }
         }
 
         private void EnsureStyles()
@@ -358,4 +493,3 @@ namespace PatronsRumorsAle.Presentation
             => $"{(int)seconds / 60:00}:{(int)seconds % 60:00}";
     }
 }
-

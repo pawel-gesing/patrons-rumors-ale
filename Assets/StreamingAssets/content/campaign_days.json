@@ -1,18 +1,80 @@
 {
   "days": [
     {
-      "id": "prototype_day_01",
-      "displayName": "Pierwszy wieczor",
-      "durationSeconds": 300.0,
+      "id": "day_001_intro",
+      "displayName": "Spokojny poczatek",
+      "durationSeconds": 240.0,
+      "arrivalIntervalSeconds": 18.0,
+      "startingCustomers": 4,
+      "moneyGoal": 180,
+      "tables": [
+        { "id": "table_2a", "seats": 2 },
+        { "id": "table_2b", "seats": 2 },
+        { "id": "table_4", "seats": 4 },
+        { "id": "table_6", "seats": 6 }
+      ],
+      "factionArrivalWeights": [
+        { "factionId": "Sarmatians", "weight": 1.0 },
+        { "factionId": "Moonshiners", "weight": 1.0 },
+        { "factionId": "Revolutionaries", "weight": 1.0 },
+        { "factionId": "Neutrals", "weight": 2.0 }
+      ],
+      "groupSizeWeights": [
+        { "size": 1, "weight": 4.0 },
+        { "size": 2, "weight": 2.0 },
+        { "size": 3, "weight": 1.0 }
+      ]
+    },
+    {
+      "id": "day_002_sarmatian_evening",
+      "displayName": "Sarmacki wieczor",
+      "durationSeconds": 270.0,
+      "arrivalIntervalSeconds": 16.0,
       "startingCustomers": 5,
+      "moneyGoal": 300,
+      "tables": [
+        { "id": "table_2a", "seats": 2 },
+        { "id": "table_2b", "seats": 2 },
+        { "id": "table_4", "seats": 4 },
+        { "id": "table_6", "seats": 6 }
+      ],
+      "factionArrivalWeights": [
+        { "factionId": "Sarmatians", "weight": 6.0 },
+        { "factionId": "Moonshiners", "weight": 1.0 },
+        { "factionId": "Revolutionaries", "weight": 1.0 },
+        { "factionId": "Neutrals", "weight": 2.0 }
+      ],
+      "groupSizeWeights": [
+        { "size": 1, "weight": 2.0 },
+        { "size": 2, "weight": 4.0 },
+        { "size": 3, "weight": 2.0 }
+      ]
+    },
+    {
+      "id": "day_003_crowded_agitation",
+      "displayName": "Tloczna agitacja",
+      "durationSeconds": 300.0,
+      "arrivalIntervalSeconds": 9.0,
+      "startingCustomers": 8,
       "moneyGoal": 360,
       "tables": [
         { "id": "table_2a", "seats": 2 },
         { "id": "table_2b", "seats": 2 },
         { "id": "table_4", "seats": 4 },
         { "id": "table_6", "seats": 6 }
+      ],
+      "factionArrivalWeights": [
+        { "factionId": "Sarmatians", "weight": 1.0 },
+        { "factionId": "Moonshiners", "weight": 1.0 },
+        { "factionId": "Revolutionaries", "weight": 5.0 },
+        { "factionId": "Neutrals", "weight": 5.0 }
+      ],
+      "groupSizeWeights": [
+        { "size": 1, "weight": 1.0 },
+        { "size": 2, "weight": 3.0 },
+        { "size": 3, "weight": 4.0 },
+        { "size": 4, "weight": 2.0 }
       ]
     }
   ]
 }
-

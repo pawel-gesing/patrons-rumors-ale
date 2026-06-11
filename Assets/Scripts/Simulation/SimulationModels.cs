@@ -28,6 +28,8 @@ namespace PatronsRumorsAle.Simulation
         public float PatienceRemaining { get; internal set; }
         public float StayRemaining { get; internal set; }
         public float InitialStaySeconds { get; internal set; }
+        public float ArrivalTime { get; internal set; }
+        public float SeatedTime { get; internal set; }
         public int BaseSpend { get; }
         public string TableId { get; internal set; }
         public int SeatIndex { get; internal set; } = -1;
@@ -110,16 +112,14 @@ namespace PatronsRumorsAle.Simulation
             return values[faction];
         }
 
-        internal void Drift(float amount)
+        internal float Drift(FactionId faction, float amount)
         {
-            foreach (FactionId faction in Enum.GetValues(typeof(FactionId)))
-            {
-                var current = values[faction];
-                if (current > 0f)
-                    values[faction] = Math.Max(0f, current - amount);
-                else if (current < 0f)
-                    values[faction] = Math.Min(0f, current + amount);
-            }
+            var before = values[faction];
+            if (before > 0f)
+                values[faction] = Math.Max(0f, before - amount);
+            else if (before < 0f)
+                values[faction] = Math.Min(0f, before + amount);
+            return values[faction] - before;
         }
 
         private static float Clamp(float value, float min, float max)
@@ -151,4 +151,3 @@ namespace PatronsRumorsAle.Simulation
         internal GameStateSnapshot(GameState state) => State = state;
     }
 }
-

@@ -80,7 +80,8 @@ namespace PatronsRumorsAle.Content
             {
                 if (string.IsNullOrWhiteSpace(day.id) || !dayIds.Add(day.id))
                     errors.Add($"Invalid or duplicate day id '{day.id}'.");
-                if (day.durationSeconds <= 0f || day.startingCustomers < 0 || day.moneyGoal < 0)
+                if (day.durationSeconds <= 0f || day.arrivalIntervalSeconds <= 0f ||
+                    day.startingCustomers < 0 || day.moneyGoal < 0)
                     errors.Add($"Day '{day.id}' has invalid duration, starting queue, or goal.");
                 if (day.tables == null || day.tables.Count == 0)
                     errors.Add($"Day '{day.id}' must define at least one table.");
@@ -93,12 +94,42 @@ namespace PatronsRumorsAle.Content
                             errors.Add($"Day '{day.id}' contains an invalid table.");
                     }
                 }
+
+                var weightedFactions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var totalFactionWeight = 0f;
+                foreach (var factionWeight in day.factionArrivalWeights)
+                {
+                    if (!factionIds.Contains(factionWeight.factionId) ||
+                        !weightedFactions.Add(factionWeight.factionId) ||
+                        factionWeight.weight <= 0f)
+                        errors.Add($"Day '{day.id}' contains an invalid faction arrival weight.");
+                    totalFactionWeight += factionWeight.weight;
+                }
+                if (totalFactionWeight <= 0f)
+                    errors.Add($"Day '{day.id}' must define faction arrival weights.");
+
+                var groupSizes = new HashSet<int>();
+                var totalGroupWeight = 0f;
+                foreach (var groupWeight in day.groupSizeWeights)
+                {
+                    if (groupWeight.size <= 0 || !groupSizes.Add(groupWeight.size) || groupWeight.weight <= 0f)
+                        errors.Add($"Day '{day.id}' contains an invalid group size weight.");
+                    totalGroupWeight += groupWeight.weight;
+                }
+                if (totalGroupWeight <= 0f)
+                    errors.Add($"Day '{day.id}' must define group size weights.");
             }
 
-            if (balance.arrivalIntervalSeconds <= 0f ||
-                balance.arrivalGroupMin <= 0 ||
-                balance.arrivalGroupMax < balance.arrivalGroupMin)
-                errors.Add("Arrival balance values are invalid.");
+            if (balance.reputationDriftPerSecond < 0f ||
+                balance.impatientReputationPenalty < 0f ||
+                balance.rejectionReputationPenalty < 0f ||
+                balance.goodSeatingReputationReward < 0f ||
+                balance.longStayReputationReward < 0f ||
+                balance.sarmatianCompanionStayBonus < 0f ||
+                balance.sarmatianCompanionSpendBonus < 0f ||
+                balance.revolutionaryAudienceStayBonus < 0f ||
+                balance.moonshinerGlobalSpendBonus < 0f)
+                errors.Add("Balance values cannot be negative.");
 
             return errors;
         }
